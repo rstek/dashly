@@ -11,6 +11,9 @@ Note: I did not google the name "Dashly", so I did not release that there are ot
 - JSON-configured
 - Docker-ready
 
+![Dashly](./dashly-demo.gif)
+
+
 ## Configuration
 
 Configuration is loaded from `config.json` at runtime (no rebuild needed).
