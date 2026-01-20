@@ -91,3 +91,7 @@ bun run build     # Build
 ```
 
 Config changes are picked up on page refresh (no cache headers on config.json).
+
+## Acknowledgments
+
+Developed with assistance from Claude AI.
