@@ -26,8 +26,10 @@ jobs:
         run: |
           docker build \
             -t rstek/dashly:${{ steps.vars.outputs.TAG }} \
+            -t rstek/dashly:latest \
             .
 
       - name: Push Docker image
         run: |
           docker push rstek/dashly:${{ steps.vars.outputs.TAG }}
+          docker push rstek/dashly:latest

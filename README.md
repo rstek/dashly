@@ -52,12 +52,20 @@ Configuration is loaded from `config.json` at runtime (no rebuild needed).
 
 ## Docker
 
+### Pull from Docker Hub
+
+```bash
+docker pull rstek/dashly:latest
+```
+
+View available versions on [Docker Hub](https://hub.docker.com/r/rstek/dashly).
+
 ### Run
 
 ```bash
 docker run -p 8080:80 \
   -v /path/to/config.json:/usr/share/caddy/html/config.json:ro \
-  dashly:latest
+  rstek/dashly:latest
 ```
 
 ### Docker Compose
@@ -65,7 +73,7 @@ docker run -p 8080:80 \
 ```yaml
 services:
   dashly:
-    image: dashly:latest
+    image: rstek/dashly:latest
     ports:
       - "8080:80"
     volumes:
