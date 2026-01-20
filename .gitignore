@@ -12,6 +12,9 @@ dev.log
 .env
 .env.local
 
+# Config
+config.json
+
 # IDE
 .vscode/
 .idea/
