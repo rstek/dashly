@@ -2,7 +2,7 @@
 
 Lightweight, JSON-configurable link organizer with environment and group filtering. Built for non-production use.
 
-Note: I did not google the name "Dashly", so I did not release that there are other services with the same name.
+Note: I did not google the name "Dashly", so I did not realise that there are other services with the same name.
 
 ## Features
 
