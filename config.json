@@ -1,0 +1,83 @@
+{
+  "dashboard": {
+    "title": "Infrastructure Dashboard",
+    "subtitle": "Quick access to services across clusters and environments.",
+    "badge": "Services",
+    "footer": "Service Dashboard | Built with Svelte",
+    "groupLabel": "Cluster"
+  },
+  "environments": [
+    {
+      "id": "prod",
+      "name": "Production!!"
+    }
+  ],
+  "groups": [
+    {
+      "id": "monitor",
+      "name": "Monitoring",
+      "domain": "monitor.rstek.dev",
+      "color": "#3498db",
+      "icon": "📊",
+      "environment": "prod"
+    },
+    {
+      "id": "devex",
+      "name": "Dev Ex",
+      "domain": "devex.rstek.dev",
+      "color": "#2ecc71",
+      "icon": "🔧",
+      "environment": "prod"
+    },
+    {
+      "id": "ctrl",
+      "name": "Control Plane",
+      "domain": "ctrl.rstek.dev",
+      "color": "#e74c3c",
+      "icon": "🎛️",
+      "environment": "prod"
+    },
+    {
+      "id": "apps",
+      "name": "Applications",
+      "domain": "apps.rstek.dev",
+      "color": "#9b59b6",
+      "icon": "🚀",
+      "environment": "prod"
+    }
+  ],
+  "services": [
+    {
+      "name": "Traefik Dashboard",
+      "url": "https://traefik.monitor.rstek.dev",
+      "description": "Monitoring group reverse proxy dashboard",
+      "icon": "🚦",
+      "group": "monitor",
+      "environment": "prod"
+    },
+    {
+      "name": "Traefik Dashboard",
+      "url": "https://traefik.devex.rstek.dev",
+      "description": "Dev Ex group reverse proxy dashboard",
+      "icon": "🚦",
+      "group": "devex",
+      "environment": "prod"
+    },
+    {
+      "name": "Traefik Dashboard",
+      "url": "https://traefik.ctrl.rstek.dev",
+      "description": "Control Plane group reverse proxy dashboard",
+      "icon": "🚦",
+      "group": "ctrl",
+      "environment": "prod"
+    },
+    {
+      "name": "Traefik Dashboard",
+      "url": "https://traefik.apps.rstek.dev",
+      "description": "Applications group reverse proxy dashboard",
+      "icon": "🚦",
+      "group": "apps",
+      "environment": "prod"
+    }
+  ]
+}
