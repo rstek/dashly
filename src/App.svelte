@@ -4,57 +4,57 @@
   let selectedEnvironment = $state('all');
   let selectedGroup = $state('all');
   let searchQuery = $state('');
+  let searchShortcutHint = $state('Ctrl+K');
   let searchInput = null;
+  let sidebarOpen = $state(true);
+  let copiedUrl = $state(null);
+  let copyTimeout = null;
 
-  // Get config from dashboard-config (initialized by main.js)
   const dashboard = getDashboard();
   const environments = getEnvironments();
   const groups = getGroups();
   const services = getServices();
   const configError = getConfigError();
 
-  // Handle case where config might not be loaded yet
   if (!dashboard || !environments || !groups || !services) {
     throw new Error('Configuration not initialized. Check dashboard-config.js setup.');
   }
 
   const environmentList = environments.list();
   const groupList = groups.list();
-  const environmentMap = new Map(
-    environmentList.map((environment) => [environment.id, environment])
-  );
-  const groupMap = new Map(groupList.map((group) => [group.id, group]));
+  const environmentMap = new Map(environmentList.map((e) => [e.id, e]));
+  const groupMap = new Map(groupList.map((g) => [g.id, g]));
+  // Deduplicate groups by ID (same group can exist across multiple environments)
+  const uniqueGroupList = [...groupMap.values()];
   const allServices = services.list();
   const allServicesCount = allServices.length;
 
-  const environmentCounts = environmentList.reduce((acc, environment) => {
-    acc[environment.id] = allServices.filter(
-      (service) => service.environment?.id === environment.id
-    ).length;
+  const environmentCounts = environmentList.reduce((acc, env) => {
+    acc[env.id] = allServices.filter((s) => s.environment?.id === env.id).length;
     return acc;
   }, {});
 
   let searchQueryNormalized = $derived(searchQuery.trim().toLowerCase());
+
   let servicesByEnvironment = $derived(
     selectedEnvironment === 'all'
       ? allServices
-      : allServices.filter((service) => service.environment?.id === selectedEnvironment)
+      : allServices.filter((s) => s.environment?.id === selectedEnvironment)
   );
+
   let visibleServicesCount = $derived(servicesByEnvironment.length);
+
   let groupCounts = $derived(
-    groupList.reduce((acc, group) => {
-      acc[group.id] = servicesByEnvironment.filter((service) => service.group === group.id).length;
+    uniqueGroupList.reduce((acc, group) => {
+      acc[group.id] = servicesByEnvironment.filter((s) => s.group === group.id).length;
       return acc;
     }, {})
   );
+
   let filteredServices = $derived(
     servicesByEnvironment.filter((service) => {
-      const matchesEnvironment =
-        selectedEnvironment === 'all' || service.environment?.id === selectedEnvironment;
       const matchesGroup = selectedGroup === 'all' || service.group === selectedGroup;
-      if (!searchQueryNormalized) {
-        return matchesEnvironment && matchesGroup;
-      }
+      if (!searchQueryNormalized) return matchesGroup;
       const haystack = [
         service.name,
         service.description,
@@ -66,8 +66,34 @@
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
-      return matchesEnvironment && matchesGroup && haystack.includes(searchQueryNormalized);
+      return matchesGroup && haystack.includes(searchQueryNormalized);
     })
+  );
+
+  let groupedServices = $derived(
+    selectedGroup === 'all'
+      ? uniqueGroupList
+          .map((group) => ({
+            ...group,
+            services: filteredServices.filter((s) => s.group === group.id),
+          }))
+          .filter((g) => g.services.length > 0)
+      : [
+          {
+            ...(groupMap.get(selectedGroup) || {
+              id: selectedGroup,
+              name: selectedGroup,
+              icon: '📁',
+              domain: '',
+              color: '#3b82f6',
+            }),
+            services: filteredServices,
+          },
+        ].filter((g) => g.services.length > 0)
+  );
+
+  let hasActiveFilters = $derived(
+    selectedEnvironment !== 'all' || selectedGroup !== 'all' || !!searchQueryNormalized
   );
 
   $effect(() => {
@@ -94,587 +120,1009 @@
     return groupMap.get(groupId)?.name || groupId;
   }
 
+  function clearAllFilters() {
+    selectedEnvironment = 'all';
+    selectedGroup = 'all';
+    searchQuery = '';
+  }
+
+  function copyUrl(event, url) {
+    event.preventDefault();
+    event.stopPropagation();
+    navigator.clipboard.writeText(url);
+    copiedUrl = url;
+    if (copyTimeout) clearTimeout(copyTimeout);
+    copyTimeout = setTimeout(() => {
+      copiedUrl = null;
+    }, 1500);
+  }
+
   function handleShortcut(event) {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault();
-      if (searchInput) {
-        searchInput.focus();
-        searchInput.select();
+      searchInput?.focus();
+      searchInput?.select();
+    }
+    if (event.key === 'Escape') {
+      if (document.activeElement === searchInput && searchQuery) {
+        searchQuery = '';
+        searchInput.blur();
+      } else if (hasActiveFilters) {
+        clearAllFilters();
       }
     }
   }
 
   $effect(() => {
-    const listener = (event) => handleShortcut(event);
+    const listener = (e) => handleShortcut(e);
     window.addEventListener('keydown', listener);
     return () => window.removeEventListener('keydown', listener);
   });
+
+  $effect(() => {
+    const isApple = /mac|iphone|ipad|ipod/i.test(navigator.platform || navigator.userAgent);
+    searchShortcutHint = isApple ? '⌘K' : 'Ctrl+K';
+  });
 </script>
 
-<main class="dashboard">
+<div class="app">
   {#if configError}
     <div class="error-banner">
-      <div class="error-content">
-        <span class="error-icon">⚠️</span>
-        <div class="error-text">
-          <div class="error-title">Configuration Error</div>
-          <div class="error-message">{configError}</div>
-          <div class="error-note">Using fallback configuration</div>
-        </div>
-      </div>
+      <svg class="error-svg" viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+        <path d="M8.982 1.566a1.13 1.13 0 00-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 01-1.1 0L7.1 5.995A.905.905 0 018 5zm.002 6a1 1 0 110 2 1 1 0 010-2z"/>
+      </svg>
+      <span>Config error: {configError} — using fallback</span>
     </div>
   {/if}
 
-  <div class="sticky-header">
-    <header class="hero">
+  <header class="app-bar">
+    <div class="app-bar-brand">
       <h1>{dashboard.title}</h1>
-      <p class="subtitle">{dashboard.subtitle}</p>
-      <div class="hero-badge">{dashboard.badge}</div>
-    </header>
+      {#if dashboard.badge}
+        <span class="badge">{dashboard.badge}</span>
+      {/if}
+    </div>
 
-    <!-- Filters -->
-    <div class="filters-panel">
-      <div class="filters-top">
-        <div class="filter-block">
-          <span class="filter-label">Environment</span>
-          <div class="chip-row">
-            <button
-              class="chip {selectedEnvironment === 'all' ? 'active' : ''}"
-              onclick={() => setEnvironmentFilter('all')}
-              title="Show all environments"
-              aria-pressed={selectedEnvironment === 'all'}
-            >
-              All ({allServicesCount})
-            </button>
-            {#each environmentList as environment}
-              <button
-                class="chip {selectedEnvironment === environment.id ? 'active' : ''}"
-                onclick={() => setEnvironmentFilter(environment.id)}
-                title="Filter to show only {environment.name} services"
-                aria-pressed={selectedEnvironment === environment.id}
-              >
-                {environment.name} ({environmentCounts[environment.id] || 0})
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <div class="filter-block">
-          <span class="filter-label">Search</span>
-          <div class="search-input">
-            <input
-              bind:this={searchInput}
-              type="search"
-              placeholder="Search services"
-              aria-label="Search services"
-              bind:value={searchQuery}
-            />
-            <span class="search-hint">Ctrl+K</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="group-filters">
+    <nav class="env-tabs">
+      <button
+        class="env-tab"
+        class:active={selectedEnvironment === 'all'}
+        onclick={() => setEnvironmentFilter('all')}
+        aria-pressed={selectedEnvironment === 'all'}
+      >
+        All <span class="env-count">{allServicesCount}</span>
+      </button>
+      {#each environmentList as env}
         <button
-          class="group-card all {selectedGroup === 'all' ? 'active' : ''}"
-          onclick={() => setGroupFilter('all')}
-          title="Show all services"
-          aria-pressed={selectedGroup === 'all'}
+          class="env-tab"
+          class:active={selectedEnvironment === env.id}
+          onclick={() => setEnvironmentFilter(env.id)}
+          aria-pressed={selectedEnvironment === env.id}
         >
-          <div class="group-icon">🌐</div>
-          <div class="group-name">All</div>
-          <div class="group-domain">{visibleServicesCount} service(s)</div>
+          {env.name} <span class="env-count">{environmentCounts[env.id] || 0}</span>
         </button>
+      {/each}
+    </nav>
 
-        {#each groupList as group}
-          <button
-            class="group-card {selectedGroup === group.id ? 'active' : ''}"
-            onclick={() => setGroupFilter(group.id)}
-            title="Filter to show only {group.name} services"
-            style={`--cluster-color: ${group.color}`}
-            aria-pressed={selectedGroup === group.id}
-          >
-            <div class="group-icon">{group.icon}</div>
-            <div class="group-name">{group.name}</div>
-            <div class="group-domain">{group.domain}</div>
-            <div class="group-service-count">{groupCounts[group.id] || 0} service(s)</div>
-          </button>
-        {/each}
-      </div>
+    <div class="search-box">
+      <svg class="search-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14">
+        <circle cx="7" cy="7" r="5"/>
+        <path d="M10.5 10.5L14 14" stroke-linecap="round"/>
+      </svg>
+      <input
+        bind:this={searchInput}
+        type="search"
+        placeholder="Search services..."
+        aria-label="Search services"
+        bind:value={searchQuery}
+      />
+      <kbd>{searchShortcutHint}</kbd>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <button
+        class="toolbar-btn sidebar-btn"
+        onclick={() => (sidebarOpen = !sidebarOpen)}
+        title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+        aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+      >
+        <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+          {#if sidebarOpen}
+            <path d="M1 2.5A1.5 1.5 0 012.5 1h11A1.5 1.5 0 0115 2.5v11a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 13.5v-11zM2.5 2a.5.5 0 00-.5.5v11a.5.5 0 00.5.5H6V2H2.5zM7 2v12h6.5a.5.5 0 00.5-.5v-11a.5.5 0 00-.5-.5H7z"/>
+          {:else}
+            <path d="M1 2.5A1.5 1.5 0 012.5 1h11A1.5 1.5 0 0115 2.5v11a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 13.5v-11zM2.5 2a.5.5 0 00-.5.5v11a.5.5 0 00.5.5h11a.5.5 0 00.5-.5v-11a.5.5 0 00-.5-.5h-11z"/>
+          {/if}
+        </svg>
+      </button>
+      <span class="result-text">
+        <strong>{filteredServices.length}</strong>
+        <span class="result-sep">/</span>
+        {allServicesCount} services
+      </span>
+      {#if hasActiveFilters}
+        <button class="toolbar-btn clear-btn" onclick={clearAllFilters} title="Clear all filters (Esc)">
+          <svg viewBox="0 0 16 16" fill="currentColor" width="10" height="10">
+            <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/>
+          </svg>
+          Clear filters
+        </button>
+      {/if}
+    </div>
+    <div class="toolbar-right">
+      <span class="toolbar-hint">
+        <kbd>Esc</kbd> clear
+      </span>
     </div>
   </div>
 
-  <!-- Services Grid -->
-  <div class="services-grid">
-    {#each filteredServices as service (service.url)}
-      <a
-        href={service.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        class="service-card"
-        title={service.description}
-        style={`--cluster-color: ${groupMap.get(service.group)?.color || '#3498db'}`}
-      >
-        <div class="service-icon">{service.icon}</div>
-        <div class="service-name">{service.name}</div>
-        <div class="service-cluster">{getGroupName(service.group)}</div>
-        <div class="service-url">{service.url}</div>
-      </a>
-    {/each}
+  <div class="workspace">
+    <aside class="sidebar" class:collapsed={!sidebarOpen}>
+      <div class="sidebar-inner">
+        <div class="sidebar-header">
+          <span class="sidebar-label">{dashboard.groupLabel || 'Groups'}</span>
+        </div>
+        <nav class="group-list">
+          <button
+            class="group-item"
+            class:active={selectedGroup === 'all'}
+            onclick={() => setGroupFilter('all')}
+            aria-pressed={selectedGroup === 'all'}
+          >
+            <span class="group-dot" style="background: var(--accent)"></span>
+            <span class="group-item-name">All</span>
+            <span class="group-item-count">{visibleServicesCount}</span>
+          </button>
+          {#each uniqueGroupList as group}
+            <button
+              class="group-item"
+              class:active={selectedGroup === group.id}
+              onclick={() => setGroupFilter(group.id)}
+              aria-pressed={selectedGroup === group.id}
+              style="--group-color: {group.color}"
+            >
+              <span class="group-dot" style="background: {group.color}"></span>
+              <span class="group-item-icon">{group.icon}</span>
+              <span class="group-item-name">{group.name}</span>
+              <span class="group-item-count">{groupCounts[group.id] || 0}</span>
+            </button>
+          {/each}
+        </nav>
+      </div>
+    </aside>
+
+    <section class="content">
+      {#each groupedServices as group (group.id)}
+        <div class="group-section">
+          {#if selectedGroup === 'all'}
+            <div class="group-divider" style="--group-color: {group.color}">
+              <span class="group-divider-accent" style="background: {group.color}"></span>
+              <span class="group-divider-icon">{group.icon}</span>
+              <span class="group-divider-name">{group.name}</span>
+              {#if group.domain}
+                <span class="group-divider-domain">{group.domain}</span>
+              {/if}
+              <span class="group-divider-count">{group.services.length}</span>
+              <span class="group-divider-line"></span>
+            </div>
+          {/if}
+          <div class="services-grid">
+            {#each group.services as service (service.url)}
+              <div
+                class="service-card"
+                style="--group-color: {groupMap.get(service.group)?.color || '#3b82f6'}"
+              >
+                <a
+                  href={service.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="card-link"
+                >
+                  <span class="card-icon">{service.icon}</span>
+                  <div class="card-body">
+                    <div class="card-title">{service.name}</div>
+                    {#if service.description}
+                      <div class="card-desc">{service.description}</div>
+                    {/if}
+                    <div class="card-meta">
+                      <span class="card-group-badge" style="--group-color: {groupMap.get(service.group)?.color || '#3b82f6'}">
+                        <span class="card-group-dot" style="background: {groupMap.get(service.group)?.color || '#3b82f6'}"></span>
+                        {getGroupName(service.group)}
+                      </span>
+                      <span class="card-url">{service.url.replace(/^https?:\/\//, '')}</span>
+                    </div>
+                  </div>
+                </a>
+                <button
+                  class="card-copy"
+                  class:copied={copiedUrl === service.url}
+                  onclick={(e) => copyUrl(e, service.url)}
+                  title="Copy URL"
+                  aria-label="Copy URL to clipboard"
+                >
+                  {#if copiedUrl === service.url}
+                    <svg viewBox="0 0 16 16" fill="currentColor" width="13" height="13">
+                      <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+                    </svg>
+                  {:else}
+                    <svg viewBox="0 0 16 16" fill="currentColor" width="13" height="13">
+                      <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/>
+                      <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/>
+                    </svg>
+                  {/if}
+                </button>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {:else}
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40">
+            <path d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <p class="empty-title">No services found</p>
+          <p class="empty-desc">Try adjusting your filters or search query</p>
+          {#if hasActiveFilters}
+            <button class="empty-clear" onclick={clearAllFilters}>Clear all filters</button>
+          {/if}
+        </div>
+      {/each}
+    </section>
   </div>
 
-  <footer class="footer">
-    <p>{dashboard.footer}</p>
+  <footer class="status-bar">
+    <span>{dashboard.footer}</span>
   </footer>
-</main>
+</div>
 
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
+  :global(html) {
+    height: 100%;
+  }
+
   :global(body) {
     margin: 0;
     padding: 0;
+    height: 100%;
+    overflow: hidden;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
-    background-color: #f3f6f4;
-    color: #17211e;
-    min-height: 100vh;
-    background-image:
-      radial-gradient(circle at 20% 20%, rgba(31, 138, 112, 0.12), transparent 55%),
-      radial-gradient(circle at 80% 0%, rgba(244, 185, 66, 0.18), transparent 50%),
-      linear-gradient(180deg, #f7f5ef 0%, #f1f6f4 100%);
-    --panel: #ffffff;
-    --panel-strong: #f7faf8;
-    --panel-muted: #f1f5f3;
-    --ink: #17211e;
-    --muted: #536260;
-    --accent: #1f8a70;
-    --accent-strong: #176e59;
-    --line: rgba(23, 33, 30, 0.12);
-    --line-strong: rgba(23, 33, 30, 0.2);
-    --shadow: 0 18px 40px rgba(23, 33, 30, 0.08);
-    --shadow-soft: 0 10px 22px rgba(23, 33, 30, 0.06);
+    background: var(--bg);
+    color: var(--text);
+    --bg: #f0f2f5;
+    --surface: #ffffff;
+    --surface-alt: #f8f9fb;
+    --surface-hover: #f1f5f9;
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --text: #1e293b;
+    --text-muted: #64748b;
+    --text-faint: #94a3b8;
+    --accent: #3b82f6;
+    --accent-hover: #2563eb;
+    --accent-subtle: rgba(59, 130, 246, 0.08);
+    --danger: #ef4444;
+    --danger-bg: #fef2f2;
+    --danger-border: #fecaca;
+    --radius: 4px;
+    --transition: 0.15s ease;
   }
 
-  .dashboard {
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 2rem;
+  :global(#app) {
+    height: 100%;
+  }
+
+  /* ── App Shell ── */
+
+  .app {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-  }
-
-  .error-banner {
-    background: #fef2f2;
-    border: 1px solid #fecaca;
-    border-radius: 0;
-    padding: 1rem;
-    margin-bottom: 0.5rem;
-    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.1);
-  }
-
-  .error-content {
-    display: flex;
-    gap: 1rem;
-    align-items: flex-start;
-  }
-
-  .error-icon {
-    font-size: 1.5rem;
-    flex-shrink: 0;
-    margin-top: 0.1rem;
-  }
-
-  .error-text {
-    flex: 1;
-  }
-
-  .error-title {
-    font-weight: 700;
-    color: #dc2626;
-    margin-bottom: 0.25rem;
-    font-size: 0.95rem;
-  }
-
-  .error-message {
-    font-size: 0.85rem;
-    color: #b91c1c;
-    margin-bottom: 0.5rem;
-    font-family: 'Courier New', monospace;
-    word-break: break-word;
-  }
-
-  .error-note {
-    font-size: 0.75rem;
-    color: #991b1b;
-    font-style: italic;
-  }
-
-  .sticky-header {
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    display: flex;
-    flex-direction: column;
-    gap: 0.85rem;
-    padding: 0.75rem 0;
-    background: rgba(243, 246, 244, 0.96);
-    backdrop-filter: blur(6px);
-    border-bottom: 1px solid var(--line);
-  }
-
-  .hero {
-    text-align: center;
-    padding: 1.5rem 2rem 1rem;
-    background: var(--panel);
-    border-radius: 0;
-    box-shadow: var(--shadow);
-    border: 1px solid rgba(31, 138, 112, 0.15);
-    position: relative;
+    height: 100%;
     overflow: hidden;
   }
 
-  .hero::after {
+  /* ── Error Banner ── */
+
+  .error-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    background: var(--danger-bg);
+    border-bottom: 1px solid var(--danger-border);
+    color: var(--danger);
+    font-size: 0.75rem;
+    flex-shrink: 0;
+  }
+
+  .error-svg {
+    flex-shrink: 0;
+  }
+
+  /* ── App Bar ── */
+
+  .app-bar {
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    height: 48px;
+    flex-shrink: 0;
+  }
+
+  .app-bar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .app-bar-brand h1 {
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin: 0;
+    white-space: nowrap;
+    color: var(--text);
+  }
+
+  .badge {
+    font-size: 0.58rem;
+    padding: 2px 7px;
+    background: var(--accent-subtle);
+    color: var(--accent);
+    border-radius: var(--radius);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+  }
+
+  /* ── Environment Tabs ── */
+
+  .env-tabs {
+    display: flex;
+    align-items: center;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .env-tab {
+    padding: 5px 14px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.72rem;
+    transition: all var(--transition);
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .env-tab + .env-tab {
+    border-left: 1px solid var(--border);
+  }
+
+  .env-tab.active {
+    background: var(--accent);
+    color: white;
+  }
+
+  .env-tab:hover:not(.active) {
+    background: var(--accent-subtle);
+    color: var(--text);
+  }
+
+  .env-count {
+    opacity: 0.7;
+    font-size: 0.65rem;
+  }
+
+  /* ── Search ── */
+
+  .search-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 5px 10px;
+    margin-left: auto;
+    min-width: 200px;
+    max-width: 340px;
+    flex: 1;
+    transition: border-color var(--transition), box-shadow var(--transition);
+  }
+
+  .search-box:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-subtle);
+  }
+
+  .search-svg {
+    flex-shrink: 0;
+    color: var(--text-faint);
+  }
+
+  .search-box input {
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.8rem;
+    outline: none;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .search-box input::placeholder {
+    color: var(--text-faint);
+  }
+
+  /* Remove native search clear button */
+  .search-box input[type='search']::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+  }
+
+  .search-box kbd {
+    font-family: inherit;
+    font-size: 0.58rem;
+    padding: 2px 5px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-faint);
+    box-shadow: 0 1px 0 var(--border);
+    flex-shrink: 0;
+    line-height: 1;
+  }
+
+  /* ── Toolbar ── */
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    height: 32px;
+    background: var(--surface-alt);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+
+  .toolbar-left,
+  .toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .toolbar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.72rem;
+    border-radius: var(--radius);
+    transition: all var(--transition);
+  }
+
+  .toolbar-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+
+  .clear-btn {
+    color: var(--accent);
+  }
+
+  .clear-btn:hover {
+    background: var(--accent-subtle);
+    color: var(--accent-hover);
+  }
+
+  .result-text {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+
+  .result-text strong {
+    color: var(--text);
+  }
+
+  .result-sep {
+    color: var(--text-faint);
+    margin: 0 1px;
+  }
+
+  .toolbar-hint {
+    color: var(--text-faint);
+    font-size: 0.62rem;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .toolbar-hint kbd {
+    font-family: inherit;
+    font-size: 0.58rem;
+    padding: 1px 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text-faint);
+    line-height: 1;
+  }
+
+  /* ── Workspace ── */
+
+  .workspace {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── Sidebar ── */
+
+  .sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    overflow-x: hidden;
+    transition: width var(--transition);
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .sidebar.collapsed {
+    width: 0;
+    border-right-color: transparent;
+  }
+
+  .sidebar-inner {
+    width: 220px;
+    padding: 8px 0;
+  }
+
+  .sidebar-header {
+    padding: 8px 14px 6px;
+  }
+
+  .sidebar-label {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-faint);
+    font-weight: 600;
+  }
+
+  .group-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .group-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.78rem;
+    text-align: left;
+    width: 100%;
+    border-left: 2px solid transparent;
+    transition: all var(--transition);
+  }
+
+  .group-item:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+
+  .group-item.active {
+    background: var(--accent-subtle);
+    color: var(--accent);
+    border-left-color: var(--group-color, var(--accent));
+    font-weight: 600;
+  }
+
+  .group-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .group-item-icon {
+    font-size: 0.9rem;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+
+  .group-item-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .group-item-count {
+    margin-left: auto;
+    font-size: 0.62rem;
+    color: var(--text-faint);
+    flex-shrink: 0;
+    font-weight: 500;
+  }
+
+  /* ── Content ── */
+
+  .content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  /* ── Group Sections ── */
+
+  .group-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .group-divider {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    padding: 0 2px;
+  }
+
+  .group-divider-accent {
+    width: 3px;
+    height: 14px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .group-divider-icon {
+    font-size: 1rem;
+    line-height: 1;
+  }
+
+  .group-divider-name {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text);
+    font-size: 0.72rem;
+  }
+
+  .group-divider-domain {
+    color: var(--text-faint);
+    font-size: 0.68rem;
+  }
+
+  .group-divider-count {
+    font-size: 0.62rem;
+    padding: 1px 7px;
+    background: var(--surface-hover);
+    border-radius: 10px;
+    color: var(--text-faint);
+    font-weight: 500;
+  }
+
+  .group-divider-line {
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── Services Grid ── */
+
+  .services-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 8px;
+  }
+
+  /* ── Service Card ── */
+
+  .service-card {
+    position: relative;
+    display: flex;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--group-color, #3b82f6);
+    border-radius: var(--radius);
+    transition: border-color var(--transition), box-shadow var(--transition);
+    overflow: hidden;
+  }
+
+  .service-card:hover {
+    border-color: var(--border-strong);
+    border-left-color: var(--group-color, #3b82f6);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  }
+
+  .card-link {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 11px 14px;
+    text-decoration: none;
+    color: inherit;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Make the link cover the entire card for click area */
+  .card-link::after {
     content: '';
     position: absolute;
     inset: 0;
-    background: radial-gradient(circle at top left, rgba(31, 138, 112, 0.12), transparent 55%);
-    pointer-events: none;
   }
 
-  .hero-badge {
-    position: absolute;
-    top: 0.85rem;
-    right: 1rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.3rem 0.6rem;
-    border-radius: 0;
-    background: rgba(31, 138, 112, 0.12);
-    color: var(--accent-strong);
-    font-weight: 600;
-    font-size: 0.75rem;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
+  .card-icon {
+    font-size: 1.3rem;
+    flex-shrink: 0;
+    line-height: 1;
+    padding-top: 1px;
   }
 
-  h1 {
-    text-align: center;
-    color: var(--ink);
-    margin: 0 0 0.6rem;
-    font-size: clamp(2.4rem, 3vw, 3.2rem);
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
-  }
-
-  .subtitle {
-    text-align: center;
-    color: var(--muted);
-    margin: 0;
-    font-size: 1.05rem;
-  }
-
-  /* Filters */
-  .filters-panel {
-    background: var(--panel);
-    border-radius: 0;
-    box-shadow: var(--shadow-soft);
-    border: 1px solid var(--line);
-    padding: 1rem;
+  .card-body {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 3px;
   }
 
-  .filters-top {
-    display: grid;
-    grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.4fr);
-    gap: 0.75rem 1.5rem;
-    align-items: center;
-    padding-bottom: 0.75rem;
-    border-bottom: 1px solid var(--line);
+  .card-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text);
   }
 
-  .filter-block {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-
-  .filter-label {
-    font-size: 0.8rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-
-  .search-input {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    border: 1px solid var(--line-strong);
-    background: var(--panel-muted);
-    padding: 0.35rem 0.75rem;
-    flex: 1;
-    min-width: 220px;
-  }
-
-  .search-input:focus-within {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(31, 138, 112, 0.2);
-  }
-
-  .search-input input {
-    border: none;
-    background: transparent;
-    color: var(--ink);
-    font-family: inherit;
-    font-size: 0.85rem;
-    min-width: 200px;
-    outline: none;
-    flex: 1;
-  }
-
-  .search-input input::placeholder {
-    color: rgba(83, 98, 96, 0.7);
-  }
-
-  .search-hint {
+  .card-desc {
     font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--muted);
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .chip-row {
+  .card-meta {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.65rem;
+    color: var(--text-faint);
+    margin-top: 2px;
   }
 
-  .chip {
-    border: 1px solid var(--line);
-    background: var(--panel-muted);
-    color: var(--ink);
-    padding: 0.35rem 0.75rem;
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
+  .card-group-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--group-color, #3b82f6);
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.04em;
+    font-size: 0.6rem;
+    flex-shrink: 0;
   }
 
-  .chip:hover {
-    background: #e7eeea;
-    transform: translateY(-1px);
+  .card-group-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
   }
 
-  .chip.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: white;
+  .card-url {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .group-filters {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 0.75rem;
-    align-items: stretch;
-  }
-
-  .group-card {
-    padding: 0.9rem 1rem;
-    border: 1px solid var(--line);
-    background: var(--panel-strong);
-    color: var(--muted);
+  .card-copy {
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: var(--radius);
+    color: var(--text-muted);
     cursor: pointer;
-    font-size: 0.9rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    display: grid;
-    gap: 0.25rem;
-    text-align: left;
+    opacity: 0;
+    transition: all var(--transition);
+    padding: 0;
   }
 
-  .group-card.all {
-    --cluster-color: var(--accent);
+  .service-card:hover .card-copy {
+    opacity: 1;
   }
 
-  .group-card:hover {
-    background: #edf2f0;
-    transform: translateY(-1px);
+  .card-copy:hover {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
-  .group-card.active {
-    background: var(--cluster-color, #3498db);
-    color: white;
-    border-color: var(--cluster-color, #3498db);
-    box-shadow: 0 10px 20px rgba(23, 33, 30, 0.18);
+  .card-copy.copied {
+    opacity: 1;
+    color: #22c55e;
+    border-color: #22c55e;
+    background: rgba(34, 197, 94, 0.08);
   }
 
-  .group-card.active:hover {
-    background: color-mix(in srgb, var(--cluster-color, #3498db) 90%, black 10%);
-  }
+  /* ── Empty State ── */
 
-  .group-icon {
-    font-size: 1.6rem;
-    color: var(--cluster-color, var(--accent));
-  }
-
-  .group-card.active .group-icon {
-    color: white;
-  }
-
-  .group-name {
-    font-size: 1rem;
-    font-weight: 600;
-  }
-
-  .group-domain {
-    font-size: 0.78rem;
-    color: var(--muted);
-  }
-
-  .group-card.active .group-domain {
-    color: rgba(255, 255, 255, 0.8);
-  }
-
-  .group-service-count {
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: var(--muted);
-  }
-
-  .group-card.active .group-service-count {
-    color: rgba(255, 255, 255, 0.85);
-  }
-
-  /* Services Grid */
-  .services-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1.5rem;
-  }
-
-  .service-card {
+  .empty-state {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 1.5rem;
-    background: var(--panel);
-    border-radius: 0;
-    box-shadow: var(--shadow-soft);
-    text-decoration: none;
-    color: var(--ink);
-    transition: all 0.2s ease;
-    border: 1px solid var(--line);
-    min-height: 170px;
-    position: relative;
+    gap: 8px;
+    padding: 64px 16px;
+    color: var(--text-faint);
   }
 
-  .service-card:hover {
-    transform: translateY(-3px);
-    box-shadow: var(--shadow);
-    border-color: var(--cluster-color, #3498db);
-  }
-
-  .service-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 4px;
-    background: var(--cluster-color, #3498db);
-    border-radius: 0;
-  }
-
-  .service-icon {
-    font-size: 2.6rem;
-    margin-bottom: 0.6rem;
-  }
-
-  .service-name {
-    font-size: 1.1rem;
-    font-weight: 600;
-    margin-bottom: 0.3rem;
-    text-align: center;
-  }
-
-  .service-cluster {
-    font-size: 0.7rem;
-    font-weight: 700;
-    color: var(--cluster-color, #3498db);
-    background: color-mix(in srgb, var(--cluster-color, #3498db) 15%, white);
-    padding: 0.2rem 0.6rem;
-    border-radius: 0;
-    margin-bottom: 0.5rem;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-  }
-
-  .service-url {
-    font-size: 0.78rem;
-    color: var(--muted);
-    word-break: break-all;
-    text-align: center;
-    margin-top: 0.5rem;
-  }
-
-  .footer {
-    text-align: center;
-    padding: 1.5rem;
-    color: var(--muted);
+  .empty-title {
     font-size: 0.9rem;
-    border-top: 1px solid var(--line);
+    font-weight: 600;
+    color: var(--text-muted);
+    margin: 8px 0 0;
+  }
+
+  .empty-desc {
+    font-size: 0.78rem;
+    margin: 0;
+  }
+
+  .empty-clear {
+    margin-top: 8px;
+    padding: 6px 16px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.75rem;
+    transition: all var(--transition);
+  }
+
+  .empty-clear:hover {
+    background: var(--accent);
+    color: white;
+  }
+
+  /* ── Status Bar ── */
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+    height: 24px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    font-size: 0.62rem;
+    color: var(--text-faint);
+    flex-shrink: 0;
+  }
+
+  /* ── Scrollbar Styling (Webkit) ── */
+
+  .sidebar::-webkit-scrollbar,
+  .content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .sidebar::-webkit-scrollbar-track,
+  .content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .sidebar::-webkit-scrollbar-thumb,
+  .content::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+
+  .sidebar::-webkit-scrollbar-thumb:hover,
+  .content::-webkit-scrollbar-thumb:hover {
+    background: var(--border-strong);
+  }
+
+  /* ── Responsive ── */
+
+  @media (max-width: 768px) {
+    .app-bar {
+      flex-wrap: wrap;
+      height: auto;
+      padding: 8px 12px;
+      gap: 8px;
+    }
+
+    .env-tabs {
+      order: 3;
+      overflow-x: auto;
+      scrollbar-width: none;
+      width: 100%;
+    }
+
+    .env-tabs::-webkit-scrollbar {
+      display: none;
+    }
+
+    .search-box {
+      order: 2;
+      max-width: none;
+      min-width: 0;
+    }
+
+    .sidebar {
+      display: none;
+    }
+
+    .services-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .toolbar-hint {
+      display: none;
+    }
+
+    .content {
+      padding: 12px;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
     .service-card,
-    .group-card,
-    .chip {
+    .group-item,
+    .env-tab,
+    .sidebar,
+    .card-copy {
       transition: none;
-    }
-  }
-
-  @media (max-width: 1024px) {
-    .services-grid {
-      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    }
-  }
-
-  @media (max-width: 768px) {
-    .services-grid {
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    }
-
-    .filters-top {
-      grid-template-columns: 1fr;
-    }
-
-    .filter-block {
-      align-items: flex-start;
-    }
-
-    .search-input {
-      width: 100%;
-    }
-
-    .search-input input {
-      min-width: 0;
-      width: 100%;
-    }
-
-    .group-filters {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  @media (max-width: 480px) {
-    .services-grid {
-      grid-template-columns: 1fr;
     }
   }
 </style>
