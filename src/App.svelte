@@ -4,6 +4,7 @@
   let selectedEnvironment = $state('all');
   let selectedGroup = $state('all');
   let searchQuery = $state('');
+  let searchShortcutHint = $state('Ctrl+K');
   let searchInput = null;
 
   // Get config from dashboard-config (initialized by main.js)
@@ -109,6 +110,13 @@
     window.addEventListener('keydown', listener);
     return () => window.removeEventListener('keydown', listener);
   });
+
+  $effect(() => {
+    const isApplePlatform = /mac|iphone|ipad|ipod/i.test(
+      navigator.platform || navigator.userAgent
+    );
+    searchShortcutHint = isApplePlatform ? '⌘K' : 'Ctrl+K';
+  });
 </script>
 
 <main class="dashboard">
@@ -125,102 +133,132 @@
     </div>
   {/if}
 
+  <header class="hero">
+    <h1>{dashboard.title}</h1>
+    <p class="subtitle">{dashboard.subtitle}</p>
+    <div class="hero-badge">{dashboard.badge}</div>
+  </header>
+
   <div class="sticky-header">
-    <header class="hero">
-      <h1>{dashboard.title}</h1>
-      <p class="subtitle">{dashboard.subtitle}</p>
-      <div class="hero-badge">{dashboard.badge}</div>
-    </header>
-
-    <!-- Filters -->
-    <div class="filters-panel">
-      <div class="filters-top">
-        <div class="filter-block">
-          <span class="filter-label">Environment</span>
-          <div class="chip-row">
+    <div class="top-filters">
+      <div class="filter-block">
+        <span class="filter-label">Environment</span>
+        <div class="chip-row">
+          <button
+            class="chip {selectedEnvironment === 'all' ? 'active' : ''}"
+            onclick={() => setEnvironmentFilter('all')}
+            title="Show all environments"
+            aria-pressed={selectedEnvironment === 'all'}
+          >
+            All ({allServicesCount})
+          </button>
+          {#each environmentList as environment}
             <button
-              class="chip {selectedEnvironment === 'all' ? 'active' : ''}"
-              onclick={() => setEnvironmentFilter('all')}
-              title="Show all environments"
-              aria-pressed={selectedEnvironment === 'all'}
+              class="chip {selectedEnvironment === environment.id ? 'active' : ''}"
+              onclick={() => setEnvironmentFilter(environment.id)}
+              title="Filter to show only {environment.name} services"
+              aria-pressed={selectedEnvironment === environment.id}
             >
-              All ({allServicesCount})
+              {environment.name} ({environmentCounts[environment.id] || 0})
             </button>
-            {#each environmentList as environment}
-              <button
-                class="chip {selectedEnvironment === environment.id ? 'active' : ''}"
-                onclick={() => setEnvironmentFilter(environment.id)}
-                title="Filter to show only {environment.name} services"
-                aria-pressed={selectedEnvironment === environment.id}
-              >
-                {environment.name} ({environmentCounts[environment.id] || 0})
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <div class="filter-block">
-          <span class="filter-label">Search</span>
-          <div class="search-input">
-            <input
-              bind:this={searchInput}
-              type="search"
-              placeholder="Search services"
-              aria-label="Search services"
-              bind:value={searchQuery}
-            />
-            <span class="search-hint">Ctrl+K</span>
-          </div>
+          {/each}
         </div>
       </div>
 
-      <div class="group-filters">
-        <button
-          class="group-card all {selectedGroup === 'all' ? 'active' : ''}"
-          onclick={() => setGroupFilter('all')}
-          title="Show all services"
-          aria-pressed={selectedGroup === 'all'}
-        >
-          <div class="group-icon">🌐</div>
-          <div class="group-name">All</div>
-          <div class="group-domain">{visibleServicesCount} service(s)</div>
-        </button>
-
-        {#each groupList as group}
-          <button
-            class="group-card {selectedGroup === group.id ? 'active' : ''}"
-            onclick={() => setGroupFilter(group.id)}
-            title="Filter to show only {group.name} services"
-            style={`--cluster-color: ${group.color}`}
-            aria-pressed={selectedGroup === group.id}
-          >
-            <div class="group-icon">{group.icon}</div>
-            <div class="group-name">{group.name}</div>
-            <div class="group-domain">{group.domain}</div>
-            <div class="group-service-count">{groupCounts[group.id] || 0} service(s)</div>
-          </button>
-        {/each}
+      <div class="filter-block search-block">
+        <span class="filter-label">Search</span>
+        <div class="search-input">
+          <input
+            bind:this={searchInput}
+            type="search"
+            placeholder="Search services"
+            aria-label="Search services"
+            bind:value={searchQuery}
+          />
+          <span class="search-hint">{searchShortcutHint}</span>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Services Grid -->
-  <div class="services-grid">
-    {#each filteredServices as service (service.url)}
-      <a
-        href={service.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        class="service-card"
-        title={service.description}
-        style={`--cluster-color: ${groupMap.get(service.group)?.color || '#3498db'}`}
-      >
-        <div class="service-icon">{service.icon}</div>
-        <div class="service-name">{service.name}</div>
-        <div class="service-cluster">{getGroupName(service.group)}</div>
-        <div class="service-url">{service.url}</div>
-      </a>
-    {/each}
+  <div class="content-layout">
+    <aside class="group-sidebar">
+      <div class="filter-block stacked">
+        <span class="filter-label">{dashboard.groupLabel || 'Group'}</span>
+        <div class="group-filters">
+          <button
+            class="group-card all {selectedGroup === 'all' ? 'active' : ''}"
+            onclick={() => setGroupFilter('all')}
+            title="Show all services"
+            aria-pressed={selectedGroup === 'all'}
+          >
+            <div class="group-icon">🌐</div>
+            <div class="group-name">All</div>
+            <div class="group-domain">{visibleServicesCount} service(s)</div>
+          </button>
+
+          {#each groupList as group}
+            <button
+              class="group-card {selectedGroup === group.id ? 'active' : ''}"
+              onclick={() => setGroupFilter(group.id)}
+              title="Filter to show only {group.name} services"
+              style={`--cluster-color: ${group.color}`}
+              aria-pressed={selectedGroup === group.id}
+            >
+              <div class="group-icon">{group.icon}</div>
+              <div class="group-name">{group.name}</div>
+              <div class="group-domain">{group.domain}</div>
+              <div class="group-service-count">{groupCounts[group.id] || 0} service(s)</div>
+            </button>
+          {/each}
+        </div>
+      </div>
+    </aside>
+
+    <section class="content-panel">
+      <div class="results-summary">
+        <p>
+          Showing <strong>{filteredServices.length}</strong> of <strong>{allServicesCount}</strong>
+          services
+        </p>
+        {#if selectedEnvironment !== 'all' || selectedGroup !== 'all' || searchQueryNormalized}
+          <button
+            class="clear-filters"
+            onclick={() => {
+              selectedEnvironment = 'all';
+              selectedGroup = 'all';
+              searchQuery = '';
+            }}
+            title="Clear all filters"
+          >
+            Clear filters
+          </button>
+        {/if}
+      </div>
+
+      <div class="services-grid">
+        {#each filteredServices as service (service.url)}
+          <a
+            href={service.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="service-card"
+            title={service.description}
+            style={`--cluster-color: ${groupMap.get(service.group)?.color || '#3498db'}`}
+          >
+            <div class="service-icon">{service.icon}</div>
+            <div class="service-name">{service.name}</div>
+            <div class="service-cluster">{getGroupName(service.group)}</div>
+            <div class="service-url">{service.url}</div>
+          </a>
+        {:else}
+          <div class="empty-state">
+            <h2>No services match these filters.</h2>
+            <p>Try adjusting environment/group filters or clearing your search query.</p>
+          </div>
+        {/each}
+      </div>
+    </section>
   </div>
 
   <footer class="footer">
@@ -310,19 +348,6 @@
     font-style: italic;
   }
 
-  .sticky-header {
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    display: flex;
-    flex-direction: column;
-    gap: 0.85rem;
-    padding: 0.75rem 0;
-    background: rgba(243, 246, 244, 0.96);
-    backdrop-filter: blur(6px);
-    border-bottom: 1px solid var(--line);
-  }
-
   .hero {
     text-align: center;
     padding: 1.5rem 2rem 1rem;
@@ -375,7 +400,34 @@
   }
 
   /* Filters */
-  .filters-panel {
+  .sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    padding: 0.75rem 0;
+    background: rgba(243, 246, 244, 0.94);
+    backdrop-filter: blur(6px);
+  }
+
+  .top-filters {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-soft);
+    padding: 0.85rem 1rem;
+    display: grid;
+    grid-template-columns: minmax(240px, 1fr) minmax(240px, 360px);
+    gap: 0.8rem 1.25rem;
+    align-items: center;
+  }
+
+  .content-layout {
+    display: grid;
+    grid-template-columns: minmax(290px, 330px) minmax(0, 1fr);
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .group-sidebar {
     background: var(--panel);
     border-radius: 0;
     box-shadow: var(--shadow-soft);
@@ -383,16 +435,16 @@
     padding: 1rem;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.85rem;
+    position: sticky;
+    top: 5.8rem;
   }
 
-  .filters-top {
-    display: grid;
-    grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.4fr);
-    gap: 0.75rem 1.5rem;
-    align-items: center;
-    padding-bottom: 0.75rem;
-    border-bottom: 1px solid var(--line);
+  .content-panel {
+    background: transparent;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
   }
 
   .filter-block {
@@ -400,6 +452,21 @@
     align-items: center;
     gap: 0.75rem;
     flex-wrap: wrap;
+  }
+
+  .search-block {
+    justify-content: flex-end;
+  }
+
+  .filter-block.stacked {
+    align-items: flex-start;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 0.9rem;
+  }
+
+  .filter-block.stacked:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
   }
 
   .filter-label {
@@ -478,9 +545,10 @@
 
   .group-filters {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 0.75rem;
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
     align-items: stretch;
+    width: 100%;
   }
 
   .group-card {
@@ -555,6 +623,53 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 1.5rem;
+  }
+
+  .results-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.8rem 1rem;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    box-shadow: var(--shadow-soft);
+    font-size: 0.9rem;
+  }
+
+  .results-summary p {
+    margin: 0;
+    color: var(--muted);
+  }
+
+  .clear-filters {
+    border: 1px solid var(--line-strong);
+    background: var(--panel-muted);
+    color: var(--ink);
+    padding: 0.35rem 0.65rem;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .clear-filters:hover {
+    background: #e7eeea;
+  }
+
+  .empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    border: 1px dashed var(--line-strong);
+    padding: 2rem 1rem;
+    background: rgba(255, 255, 255, 0.7);
+  }
+
+  .empty-state h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1.1rem;
+  }
+
+  .empty-state p {
+    margin: 0;
+    color: var(--muted);
   }
 
   .service-card {
@@ -640,6 +755,22 @@
   }
 
   @media (max-width: 1024px) {
+    .top-filters {
+      grid-template-columns: 1fr;
+    }
+
+    .search-block {
+      justify-content: flex-start;
+    }
+
+    .content-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .group-sidebar {
+      position: static;
+    }
+
     .services-grid {
       grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     }
@@ -648,10 +779,6 @@
   @media (max-width: 768px) {
     .services-grid {
       grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    }
-
-    .filters-top {
-      grid-template-columns: 1fr;
     }
 
     .filter-block {
@@ -668,7 +795,20 @@
     }
 
     .group-filters {
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    }
+
+    .sticky-header {
+      position: static;
+      padding: 0;
+      background: transparent;
+      backdrop-filter: none;
+    }
+
+    .results-summary {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.5rem;
     }
   }
 
