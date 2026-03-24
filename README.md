@@ -13,7 +13,7 @@ Note: I did not google the name "Dashly", so I did not realise that there are ot
 
 <img width="1529" height="945" alt="image" src="https://github.com/user-attachments/assets/cf475ec6-152d-48f7-b3e5-610d2bd28895" />
 
-__ Version 0.3.0 demo gif __
+__ Version 0.0.4 demo gif __
 ![Dashly](./dashly-demo.gif)
 
 
