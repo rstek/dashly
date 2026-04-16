@@ -12,6 +12,13 @@ async function main() {
 
   const target = document.getElementById('app');
   mount(App, { target });
+
+  // Append user-supplied stylesheet last so it wins the cascade over
+  // Svelte's runtime-injected styles. Missing file 404s harmlessly.
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = '/custom.css';
+  document.head.appendChild(link);
 }
 
 main();

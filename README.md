@@ -9,12 +9,10 @@ Note: I did not google the name "Dashly", so I did not realise that there are ot
 - Environment + group filters
 - Full-text search (`Ctrl+K` / `Cmd+K`)
 - JSON-configured
+- Runtime `custom.css` override (no rebuild)
 - Docker-ready
 
-<img width="1529" height="945" alt="image" src="https://github.com/user-attachments/assets/cf475ec6-152d-48f7-b3e5-610d2bd28895" />
-
-__ Version 0.0.4 demo gif __
-![Dashly](./dashly-demo.gif)
+![Dashly](./screenshot.png)
 
 
 ## Configuration
@@ -58,6 +56,21 @@ Configuration is loaded from `config.json` at runtime (no rebuild needed).
 }
 ```
 
+## Custom CSS
+
+Mount a `custom.css` file to override styles at runtime (no rebuild). Loaded
+after the app mounts, so it wins the cascade over the built-in Svelte styles.
+If the file is absent it 404s harmlessly.
+
+```css
+/* custom.css */
+body {
+  background: #0b1021;
+}
+```
+
+Mount it alongside `config.json` — see Docker examples below.
+
 ## Docker
 
 ### Pull from Docker Hub
@@ -73,6 +86,7 @@ View available versions on [Docker Hub](https://hub.docker.com/r/rstek/dashly).
 ```bash
 docker run -p 8080:80 \
   -v /path/to/config.json:/usr/share/caddy/html/config.json:ro \
+  -v /path/to/custom.css:/usr/share/caddy/html/custom.css:ro \
   rstek/dashly:latest
 ```
 
@@ -86,6 +100,7 @@ services:
       - "8080:80"
     volumes:
       - ./config.json:/usr/share/caddy/html/config.json:ro
+      - ./custom.css:/usr/share/caddy/html/custom.css:ro
 ```
 
 ## Development

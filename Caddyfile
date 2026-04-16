@@ -1,14 +1,19 @@
 :80 {
 	root * /usr/share/caddy/html
 
-	# Serve index.html for SPA routing
-	try_files {path} /index.html
+	# SPA routing: fall back to index.html only for non-asset paths.
+	# Missing asset files (e.g. /custom.css) must 404, not return HTML.
+	@spa {
+		not file
+		not path *.css *.js *.map *.json *.png *.jpg *.jpeg *.gif *.svg *.ico *.webp *.woff *.woff2 *.ttf *.txt
+	}
+	rewrite @spa /index.html
 
-	# No cache for config.json
-	@config path /config.json
-	header @config Cache-Control "no-cache, no-store, must-revalidate"
-	header @config Pragma "no-cache"
-	header @config Expires "0"
+	# No cache for runtime-mounted config/style files
+	@runtime path /config.json /custom.css
+	header @runtime Cache-Control "no-cache, no-store, must-revalidate"
+	header @runtime Pragma "no-cache"
+	header @runtime Expires "0"
 
 	# Long cache for assets
 	@assets path /assets/*
